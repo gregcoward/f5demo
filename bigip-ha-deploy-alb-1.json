@@ -40,7 +40,7 @@
               "name": "[concat('loadBalancerFrontEnd', '1')]",
               "properties": {
                 "publicIPAddress": {
-                  "id": "[concat(variables('publicIPID'), '1')]"
+                  "id": "[concat(parameters('publicIPID'), '1')]"
                 }
               }
             }
