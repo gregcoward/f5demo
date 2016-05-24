@@ -45,10 +45,10 @@
               }
             },
             {
-              "name": "[concat('loadBalancerFrontEnd', '1')]",
+              "name": "[concat('loadBalancerFrontEnd', '2')]",
               "properties": {
                 "publicIPAddress": {
-                  "id": "[concat(parameters('publicIPID'), '1')]"
+                  "id": "[concat(parameters('publicIPID'), '2')]"
                 }
               }
             }
