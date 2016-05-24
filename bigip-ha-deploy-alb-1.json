@@ -1,0 +1,139 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "West US",
+      "allowedValues": [
+        "Brazil South",
+        "Central US",
+        "East Aisa",
+        "East US",
+        "East US 2",
+        "Japan East",
+        "Japan West",
+        "North Central US",
+        "North Europe",
+        "South Central US",
+        "Southeast Aisa",
+        "West Europe",
+        "West US"
+      ],
+      "metadata": {
+        "description": "The data center you want to install into."
+      }
+    },
+    "dnsNameForPublicIP": {
+      "type": "string",
+      "metadata": {
+        "description": "Unique DNS Name for the Public IP(s) used to access the BIGIP."
+      }
+    },
+    "loadBalancerName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of ALB object."
+      }
+    }
+  },
+  "variables": {
+      "lbID": "[resourceId('Microsoft.Network/loadBalancers',variables('loadBalancerName'))]",
+      "frontEndIPConfigID": "[concat(variables('lbID'),'/frontendIPConfigurations/loadBalancerFrontEnd')]",
+      "publicIPID": "[resourceId('Microsoft.Network/publicIPAddresses',parameters('dnsNameForPublicIP'))]"
+    },
+  "resources": [
+    {
+        "apiVersion": "2015-06-15",
+        "tags": {
+          "displayName": "AzureLoadBalancer"
+        },
+        "dependsOn": [
+        ],
+        "location": "[parameters('location')]",
+        "name": "[variables('loadBalancerName')]",
+        "properties": {
+          "frontendIPConfigurations": [
+            {
+              "name": "[concat('loadBalancerFrontEnd', '1')]",
+              "properties": {
+                "publicIPAddress": {
+                  "id": "[concat(variables('publicIPID'), '1')]"
+                }
+              }
+            }
+          ],
+          "backendAddressPools": [
+            {
+              "name": "loadBalancerBackEnd"
+            }
+          ],
+          "loadBalancingRules": [
+            {
+              "Name": "APP1-HTTPS",
+              "properties": {
+                "frontendIPConfiguration": {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/loadBalancerFrontEnd1')]"
+                },
+                "backendAddressPool": {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/backendAddressPools/loadBalancerBackEnd')]"
+                },
+                "probe": {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/probes/lbprobeHTTPS', '1')]"
+                },
+                "protocol": "Tcp",
+                "frontendPort": 443,
+                "backendPort": 6441,
+                "idleTimeoutInMinutes": 15
+              }
+            },
+            {
+              "Name": "APP1-HTTP",
+              "properties": {
+                "frontendIPConfiguration": {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/loadBalancerFrontEnd1')]"
+                },
+                "backendAddressPool": {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/backendAddressPools/loadBalancerBackEnd')]"
+                },
+                "probe": {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/probes/lbprobeHTTP', '1')]"
+                },
+                "protocol": "Tcp",
+                "frontendPort": 80,
+                "backendPort": 8081,
+                "idleTimeoutInMinutes": 15
+              }
+            }
+          ],
+          "probes": [
+            {
+              "properties": {
+                "protocol": "Tcp",
+                "port": 6441,
+                "intervalInSeconds": 15,
+                "numberOfProbes": 2
+              },
+              "name": "[concat('lbprobeHTTPS', '1')]"
+            },
+            {
+              "properties": {
+                "protocol": "Tcp",
+                "port": 8081,
+                "intervalInSeconds": 15,
+                "numberOfProbes": 2
+              },
+              "name": "[concat('lbprobeHTTP', '1')]"
+            }
+          ]
+        },
+        "type": "Microsoft.Network/loadBalancers"
+      }
+    ],
+    "outputs": {
+      "Documentation": {
+        "type": "string",
+        "value": "To configure these BIG-IP devices into a Device Service Cluster, please see the following documentation.  https://support.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/bigip-device-service-clustering-admin-12-0-0.html?sr=50978566"
+      }
+    }
+  }
