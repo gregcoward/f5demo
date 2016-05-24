@@ -3,47 +3,22 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": {
-      "type": "string",
-      "defaultValue": "West US",
-      "allowedValues": [
-        "Brazil South",
-        "Central US",
-        "East Aisa",
-        "East US",
-        "East US 2",
-        "Japan East",
-        "Japan West",
-        "North Central US",
-        "North Europe",
-        "South Central US",
-        "Southeast Aisa",
-        "West Europe",
-        "West US"
-      ],
-      "metadata": {
-        "description": "The data center you want to install into."
-      }
+      "type": "string"
     },
     "dnsNameForPublicIP": {
-      "type": "string",
-      "metadata": {
-        "description": "Unique DNS Name for the Public IP(s) used to access the BIGIP."
-      }
+      "type": "string"
     },
     "loadBalancerName": {
-      "type": "string",
-      "metadata": {
-        "description": "Name of ALB object."
-      }
+      "type": "string"
     }
-  },
+   },
   "variables": {
       "lbID": "[resourceId('Microsoft.Network/loadBalancers',parameters('loadBalancerName'))]",
       "frontEndIPConfigID": "[concat(variables('lbID'),'/frontendIPConfigurations/loadBalancerFrontEnd')]",
       "publicIPID": "[resourceId('Microsoft.Network/publicIPAddresses',parameters('dnsNameForPublicIP'))]"
     },
   "resources": [
-    {
+      {
         "apiVersion": "2015-06-15",
         "tags": {
           "displayName": "AzureLoadBalancer"
