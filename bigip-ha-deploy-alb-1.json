@@ -10,12 +10,19 @@
     },
     "loadBalancerName": {
       "type": "string"
+    },
+    "lbID": {
+      "type": "string"
+    },
+    "frontEndIPConfigID": {
+      "type": "string"
+    },
+    "publicIPID": {
+      "type": "string"
     }
-   },
+  },
   "variables": {
-      "lbID": "[resourceId('Microsoft.Network/loadBalancers',parameters('loadBalancerName'))]",
-      "frontEndIPConfigID": "[concat(variables('lbID'),'/frontendIPConfigurations/loadBalancerFrontEnd')]",
-      "publicIPID": "[resourceId('Microsoft.Network/publicIPAddresses',parameters('dnsNameForPublicIP'))]"
+      
     },
   "resources": [
       {
