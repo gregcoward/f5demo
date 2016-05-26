@@ -85,9 +85,13 @@
     "availabilitySetName": "[concat(parameters('dnsNameForPublicIP'),'-avset')]",
     "newStorageAccountName": "[concat(parameters('dnsNameForPublicIP'),'stor')]",
     "bigipNamePrefix": "[concat(parameters('dnsNameForPublicIP'),'-bigip')]",
-    "templateBaseUrl": "https://github.com/gregcoward/f5demo/blob/master/",
+    "templateBaseUrl": "https://raw.githubusercontent.com/gregcoward/f5demo/master/",
+    "templateFileBase": "bigip-ha-deploy-alb-",
     "vnetID": "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetworkName'))]",
-    "subnetRef": "[concat(variables('vnetID'),'/subnets/',variables('extsubnetName'))]"
+    "subnetRef": "[concat(variables('vnetID'),'/subnets/',variables('extsubnetName'))]",
+    "lbID": "[resourceId('Microsoft.Network/loadBalancers',variables('loadBalancerName'))]",
+    "frontEndIPConfigID": "[concat(variables('lbID'),'/frontendIPConfigurations/loadBalancerFrontEnd')]",
+    "publicIPID": "[resourceId('Microsoft.Network/publicIPAddresses',parameters('dnsNameForPublicIP'))]"
   },
   "resources": [
     {
@@ -205,13 +209,28 @@
       "properties": {
         "mode": "Incremental",
         "templateLink": {
-          "uri": "[concat(variables('templateBaseUrl'), 'bigip-ha-deploy-alb-', parameters('numberofPublicIPs'), '.json')]",
+          "uri": "[concat(variables('templateBaseUrl'), variables('templateFileBase'), parameters('numberofPublicIPs'), '.json')]",
           "contentVersion": "1.0.0.0"
         },
         "parameters": {
-          "location": { "value": "[parameters('location')]" },
-          "dnsNameForPublicIP": { "value": "[parameters('dnsNameForPublicIP')]" },
-          "loadBalancerName": { "value": "[variables('loadBalancerName')]" }
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "dnsNameForPublicIP": {
+            "value": "[parameters('dnsNameForPublicIP')]"
+          },
+          "loadBalancerName": {
+            "value": "[variables('loadBalancerName')]"
+          },
+          "lbID": {
+            "value": "[variables('lbID')]"
+          },
+          "frontEndIPConfigID": {
+            "value": "[variables('frontEndIPconfigID')]"
+          },
+          "publicIPID": {
+            "value": "[variables('publicIPID')]"
+          }
         }
       }
     },
@@ -232,7 +251,7 @@
       ],
       "properties": {
         "frontendIPConfiguration": {
-          "id": "[variables('frontEndIPConfigID1')]"
+          "id": "[concat(variables('frontEndIPConfigID'), '1')]"
         },
         "protocol": "tcp",
         "frontendPort": "[copyIndex(8443)]",
@@ -257,7 +276,7 @@
       ],
       "properties": {
         "frontendIPConfiguration": {
-          "id": "[variables('frontEndIPConfigID1')]"
+          "id": "[concat(variables('frontEndIPConfigID'), '1')]"
         },
         "protocol": "tcp",
         "frontendPort": "[copyIndex(8022)]",
