@@ -27,13 +27,24 @@
     "numberOfBIGIPs": {
       "type": "int",
       "defaultValue": 2,
+      "allowedValues": [
+        "1",
+        "2"
+      ],
       "metadata": {
-        "description": "The number of BIGIPs that will be deployed infront of your application."
+        "description": "The number of BIGIPs that will be deployed infront of your application, (1-2)."
       }
     },
     "numberOfPublicIPs": {
       "type": "int",
       "defaultValue": 1,
+      "allowedValues": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
       "metadata": {
         "description": "The number of publicly routable IPs needed for external application access, (1-5)."
       }
