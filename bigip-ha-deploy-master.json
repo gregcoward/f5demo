@@ -42,11 +42,13 @@
     },
     "vmSize": {
       "type": "string",
-      "defaultValue": "Standard_A3",
+      "defaultValue": "Standard_A1",
       "metadata": {
         "description": "The size of the Virtual Hardware Instance."
       },
       "allowedValues": [
+        "Standard_A1",
+        "Standard_A2",
         "Standard_A3",
         "Standard_A4",
         "Standard_D2",
