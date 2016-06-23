@@ -2,13 +2,13 @@
 ###########################################################################
 ##       ffff55555                                                       ##
 ##     fffff f555555                                                     ##
-##   fff      f5    5          Blackbox Deployment Script Version 1.8.3  ##
+##   fff      f5    5          BIG-IP Deployment Script Version 1.0rev.  ##
 ##  ff    fffff     555                                                  ##
 ##  ff    fffff f555555                                                  ##
 ## fff       f     55555             Written By: F5 Networks             ##
 ## f        ff     55555                                                 ##
 ## fff   ffff      ..:55             Date Created: 10/31/2013            ##
-## fff    fff5555 ..::,5             Last Updated: 06/01/2015            ##
+## fff    fff5555 ..::,5             Last Updated: 06/22/2016            ##
 ##  ff    fff 555555,;;                                                  ##
 ##   f    fff  55555,;       This script is a modified version of the    ##
 ##   f    fff    55,55         OpenStack auto-configuration script       ##
@@ -25,26 +25,7 @@
 ##   1.0   #  Ken Bocchino  # Modified to work for Blackbox              ##
 ##         # Thomas Stanley #                                            ##
 ###########################################################################
-##   1.1   #  Ken Bocchino  # Corrected Space Issue	                 ##
-###########################################################################
-##  1.1.1  #  Ken Bocchino  # Increased wait time for mcpd               ##
-###########################################################################
-##   1.2   #  Ken Bocchino  # Added base key file pull	                 ##
-###########################################################################
-##   1.5   #  Ken Bocchino  # Added iApp update 	                 ##
-###########################################################################
-##   1.5.1 #  Ken Bocchino  # Corrected basekeyfile null issue           ##
-##         #                # Corrected DHCP and added logic for Rome    ##
-###########################################################################
-##   1.7   #  Ken Bocchino  # Converted iApp input to full JSON          ##
-###########################################################################
-##   1.8   #  Ken Bocchino  # Added status and error messages for Rome   ##
-###########################################################################
-##   1.8.1 #  Ken Bocchino  # Added error handling                       ##
-###########################################################################
-##   1.8.2 #  Ken Bocchino  # Added error handling                       ##
-###########################################################################
-##   1.8.3 #  Ken Bocchino  # Updated iApp Deployment                    ##
+##  1.0rev.# Gregory Coward # Converted to generic intial lic/config     ##
 ###########################################################################
 
 shopt -s extglob
