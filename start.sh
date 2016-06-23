@@ -34,7 +34,7 @@
 IFS=';' read -ra devicearr <<< "$1"    
 
 ## Construct the blackbox.conf file using the arrays.
-jsonfile= '{"bigip":{"application_name":"My Application","ntp_servers":"1.pool.ntp.org 2.pool.ntp.org","ssh_key_inject":"false","change_passwords":"false","license":{"basekey":"'${devicearr[4]}'"},"modules":{"auto_provision":"true","ltm":"nominal","afm":"nominal","asm":"nominal","apm":"nominal"},"network":{"provision":"false"}}}'
+jsonfile= '{"bigip":{"application_name":"My Application","ntp_servers":"1.pool.ntp.org 2.pool.ntp.org","ssh_key_inject":"false","change_passwords":"false","license":{"basekey":"'${devicearr[1]}'"},"modules":{"auto_provision":"true","ltm":"nominal","afm":"nominal","asm":"nominal","apm":"nominal"},"network":{"provision":"false"}}}'
 
 echo $jsonfile > /config/blackbox.conf
 
