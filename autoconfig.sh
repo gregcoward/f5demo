@@ -2,19 +2,49 @@
 ###########################################################################
 ##       ffff55555                                                       ##
 ##     fffff f555555                                                     ##
-##   fff      f5    5          ISC LAB  Deployment Script Version 1.0.1  ##
+##   fff      f5    5          Blackbox Deployment Script Version 1.8.3  ##
 ##  ff    fffff     555                                                  ##
 ##  ff    fffff f555555                                                  ##
 ## fff       f     55555             Written By: F5 Networks             ##
 ## f        ff     55555                                                 ##
-## fff   ffff      ..:55             Date Created: 10/20/2015            ##
-## fff    fff5555 ..::,5                                                 ##
+## fff   ffff      ..:55             Date Created: 10/31/2013            ##
+## fff    fff5555 ..::,5             Last Updated: 06/01/2015            ##
 ##  ff    fff 555555,;;                                                  ##
 ##   f    fff  55555,;       This script is a modified version of the    ##
 ##   f    fff    55,55         OpenStack auto-configuration script       ##
 ##    ffffffff5555555       Written by John Gruber and George Watkins    ##
 ##       fffffff55                                                       ##
 ###########################################################################
+###########################################################################
+##                              Change Log                               ##
+###########################################################################
+## Version #     Name       #                    NOTES                   ##                  
+###########################################################################
+## 10/31/13#  John Gruber   # Created base functionality                 ##
+###########################################################################
+##   1.0   #  Ken Bocchino  # Modified to work for Blackbox              ##
+##         # Thomas Stanley #                                            ##
+###########################################################################
+##   1.1   #  Ken Bocchino  # Corrected Space Issue	                 ##
+###########################################################################
+##  1.1.1  #  Ken Bocchino  # Increased wait time for mcpd               ##
+###########################################################################
+##   1.2   #  Ken Bocchino  # Added base key file pull	                 ##
+###########################################################################
+##   1.5   #  Ken Bocchino  # Added iApp update 	                 ##
+###########################################################################
+##   1.5.1 #  Ken Bocchino  # Corrected basekeyfile null issue           ##
+##         #                # Corrected DHCP and added logic for Rome    ##
+###########################################################################
+##   1.7   #  Ken Bocchino  # Converted iApp input to full JSON          ##
+###########################################################################
+##   1.8   #  Ken Bocchino  # Added status and error messages for Rome   ##
+###########################################################################
+##   1.8.1 #  Ken Bocchino  # Added error handling                       ##
+###########################################################################
+##   1.8.2 #  Ken Bocchino  # Added error handling                       ##
+###########################################################################
+##   1.8.3 #  Ken Bocchino  # Updated iApp Deployment                    ##
 ###########################################################################
 
 shopt -s extglob
@@ -59,12 +89,18 @@ OS_SELFIP_PREFIX="blackbox-dhcp-"
 OS_SELFIP_ALLOW_SERVICE="none"
 OS_SELFIP_DESCRIPTION="auto-added by blackbox-init"
 OS_PROVISION_FILE="/tmp/blackbox-provision"
+
+# CMI group add settings
+CMI_RETRIES=180
+CMI_RETRY_INTERVAL=10
+
 # Regular expressions
 LEVEL_REGEX='^(dedicated|minimum|nominal|none)$'
 PW_REGEX='^\$[0-9][A-Za-z]?\$'
 TMM_IF_REGEX='^1\.[0-9]$'
 IP_REGEX='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'
 SELFIP_ALLOW_SERVICE_REGEX='^(all|default|none)$'
+
 
 # insert tag and log
 function log() {
@@ -75,7 +111,6 @@ function set_status() {
   echo "$1" > $OS_USER_DATA_STATUS_PATH
 }
 
-
 function upcase() {
   echo "$1" | tr '[a-z]' '[A-Z]'
 }
@@ -85,8 +120,6 @@ function get_json_value() {
     \$value =~ s/([^a-zA-Z0-9])/\$1/g; print \$value" $2)
 }
 
-
-
 function get_user_data_value() {
   echo -n $(get_json_value $1 $OS_USER_DATA_TEMP_PATH)
 }
@@ -94,6 +127,15 @@ function get_user_data_value() {
 function get_user_data_system_cmds() {
   echo -n $(perl -MJSON -ne "print join(';;', \
   @{decode_json(\$_)->{bigip}{system_cmds}})" $OS_USER_DATA_TEMP_PATH)
+}
+
+function get_user_data_iapps_hash() {
+  echo -ne $(perl -MJSON -ne "print join('\n', \
+  %{decode_json(\$_)->$1})" $OS_USER_DATA_TEMP_PATH)
+}
+
+function get_user_data_iapps_array() {
+  echo -ne $(perl -MJSON -ne "@value = @{decode_json(\$_)->$1}; foreach (@value) {if(ref(\$_) eq 'ARRAY') {foreach (@\$_) {\$string .= '\\\"' . \$_ . '\\\"' . ',';}print '\"[' . substr(\$string, 0, -1) . ']\" ';} else {print '\\\"' . \$_ . '\\\"' . \" \";}}" $OS_USER_DATA_TEMP_PATH)
 }
 
 function generate_sha512_passwd_hash() {
@@ -105,8 +147,6 @@ function get_dhcp_server_address() {
   echo -n $(awk '/dhcp-server-identifier/ { print $3 }' \
     /var/lib/dhclient/dhclient.leases | tail -1 | tr -d ';')
 }
-
-
 
 # check state
 function wait_status_active() {
@@ -187,14 +227,14 @@ function wait_tmm_started() {
   done
 }
 
-
 # extract license from JSON data and license unit
 function license_bigip() {
   host=$(get_user_data_value {bigip}{license}{host})
-  basekey="UXQHV-ACQQX-TQOSQ-RROUL-YBOEFUN"  
+  basekey=$(get_user_data_value {bigip}{license}{basekey})
   basekeyfile=$(get_user_data_value {bigip}{license}{basekeyfile})  
     if [[ -n $basekeyfile ]]; then
    	    basekey=`cat $basekeyfile`
+         shred -u -z $basekeyfile
     fi
   addkey=$(get_user_data_value {bigip}{license}{addkey})
   sed -ised -e 's/sleep\ 5/sleep\ 10/' /etc/init.d/mysql
@@ -208,7 +248,7 @@ function license_bigip() {
       [[ -n $addkey ]] && addkey_cmd="--addkey $addkey"
 
       while true; do
-        log "Licensing BIG-IP using license key $basekey..."
+        log "Licensing BIG-IP using license key..."
         SOAPLicenseClient $host_cmd --basekey $basekey $addkey_cmd 2>&1 | eval $LOGGER_CMD
 
         if [[ $? == 0 && -f $BIGIP_LICENSE_FILE ]]; then
@@ -237,13 +277,13 @@ function license_bigip() {
   else
     log "BIG-IP already licensed, skipping license activation..."
   fi
+  unset basekey
 }
 
 # return list of modules supported by current platform
 function get_supported_modules() {
   echo -n $(tmsh list sys provision one-line | awk '/^sys/ { print $3 }')
 }
-
 
 # retrieve enabled modules from BIG-IP license file
 function get_licensed_modules() {
@@ -336,7 +376,7 @@ function change_passwords() {
           log "Found hash for salted password, successfully changed $user password..."
         else
           password_hash=$(generate_sha512_passwd_hash "$password")
-          log "Found plain text password and (against my better judgment) successfully changed $user password..."
+          log "Found plain text password and (against my better judgement) successfully changed $user password..."
         fi
 
         sed -e "/auth user $user/,/}/ s|\(encrypted-password \).*\$|\1\"$password_hash\"|" \
@@ -380,7 +420,7 @@ function set_tmm_if_selfip() {
       log "Configuring self IP $selfip_name on VLAN $vlan_name with DHCP address $address/$netmask..."
     fi
 
-    selfip_cmd="tmsh create net self $selfip_name address $address/$netmask allow-service $selfip_allow_service vlan $vlan_name description \"$selfip_description\""
+    selfip_cmd="tmsh create net self $selfip_name address $address/$netmask allow-service $selfip_allow_service vlan $vlan_name traffic-group traffic-group-local-only address-source from-user description \"$selfip_description\""
     log "  $selfip_cmd"
     eval "$selfip_cmd 2>&1 | $LOGGER_CMD"
   fi
@@ -575,9 +615,329 @@ function execute_system_cmd() {
   unset IFS
 }
 
-function webserv() {
-  tmsh create ltm pool WebPool members add { 10.0.0.8:80 } monitor http
-  tmsh create ltm virtual OnPremWeb destination 10.0.0.10:6444 profiles add { clientssl http } pool WebPool snat automap persist replace-all-with { cookie } fallback-persistence source_addr
+function cmi_configuration() {
+     log "Provisioning CMI..."
+     # disable dhcp for mgmt - must be static for config sync to work
+     tmsh modify sys global-settings mgmt-dhcp disabled
+     
+     #set global hostname and device name
+     hostname=$(get_user_data_value {loadbalance}{device_hostname}).azuresecurity.com
+     host=`tmsh list sys global-settings | grep hostname`
+     if [[ $host == *$hostname* ]]; then
+          log "We are correctly named."
+     else
+          log "Renaming device to $hostname."
+          tmsh modify sys global-settings hostname $hostname
+          tmsh mv cm device bigip1 $hostname
+          sleep 10
+     fi  
+     tmsh save sys config | eval $LOGGER_CMD
+     
+     # get the internal ip address from JSON
+     address=$(get_user_data_value {loadbalance}{device_address})
+     
+     # set the config sync ip to the self/mgmt address
+     tmsh modify cm device $hostname configsync-ip $address
+     tmsh save sys config | eval $LOGGER_CMD
+     
+     # find out if we are master
+     master=$(get_user_data_value {loadbalance}{is_master})
+     if [[ $master == "true" ]]; then
+          device_group=`tmsh list cm device-group Sync`          
+          if [[ -z $device_group ]]; then         
+               # we don't have the Sync device group; configure one to include the local device
+               log "Sync device group not found, let's create it."
+               # create the device group
+               device_group_cmd="tmsh create cm device-group Sync devices add { $hostname } type sync-failover network-failover disabled auto-sync enabled asm-sync enabled"
+               log "  $device_group_cmd"
+               eval "$device_group_cmd 2>&1 | $LOGGER_CMD"             
+          else
+               # device group already exists
+               log "Sync device group found, returning to deployment."
+          fi
+     else
+          # we're a slave, so use REST API to join us to the trust domain and device group          
+          device_group=`tmsh list cm device-group Sync`          
+          if [[ -z $device_group ]]; then
+               master_hostname=$(get_user_data_value {loadbalance}{master_hostname}).azuresecurity.com
+               master_ip=$(get_user_data_value {loadbalance}{master_address})
+               master_user=admin
+               master_password="$(get_user_data_value {loadbalance}{master_password})"
+               
+               slave_hostname=$(get_user_data_value {loadbalance}{device_hostname}).azuresecurity.com
+               slave_address=$(get_user_data_value {loadbalance}{device_address})
+               slave_user=admin
+               slave_password="$(get_user_data_value {loadbalance}{device_password})"
+               
+               # need to wait until the startup script has finished on the master BIG-IP
+               failed=0
+               until [[ "$(curl -sk -u $master_user:$master_password -X POST -H "Content-type: application/json" https://$master_ip/mgmt/tm/util/unix-ls -d '{ "command":"run","utilCmdArgs":"/config/azuresecurity.sh" }' | grep -o "No such file or directory")" ]] || [[ $failed -eq $CMI_RETRIES ]]; do
+                    failed=$(($failed + 1))
+                    log "Master not yet ready, retrying in $CMI_RETRY_INTERVAL seconds"
+                    sleep $CMI_RETRY_INTERVAL
+               done
+               
+               if [[ $failed -ge $CMI_RETRIES ]]; then
+                    log "Could not detect that the master is ready after $failed attempts, quitting..."
+                    set_status "Failure: Could not detect that the master is ready after $failed attempts"
+                    exit
+               fi
+               
+               # add ourselves to the trust domain on the master
+               if [[ -n $master_password && -n $slave_password ]]; then
+                    log "Adding this WAF to the trust domain..."
+                    # check that the master device is present in our local trust domain
+                    failed=0
+                    until [[ "$(curl -sk -u $slave_user:$slave_password -X GET -H "Content-type: application/json" https://localhost/mgmt/tm/cm/trust-domain/ | grep -o "$master_hostname")" ]] || [[ $failed -eq $CMI_RETRIES ]]; do
+                         failed=$(($failed + 1))
+                         curl -sk -u $master_user:$master_password -X POST -H "Content-type: application/json" https://$master_ip/mgmt/tm/cm/add-to-trust -d '{ "command":"run","name":"Root","caDevice":true,"device":"'"$slave_address"'","deviceName":"'"$slave_hostname"'","username":"'"$slave_user"'","password":"'"$slave_password"'" }'
+                         log "Not yet joined to trust domain after $failed tries, retrying in $CMI_RETRY_INTERVAL seconds"
+                         sleep $CMI_RETRY_INTERVAL
+                    done
+                    
+                    if [[ $failed -ge $CMI_RETRIES ]]; then
+                         log "Could not join the trust domain after $failed attempts, quitting..."
+                         set_status "Failure: Could not join the trust domain after $failed attempts"
+                         exit
+                    fi
+                    
+                    # add ourselves to the Sync device group on the master
+                    log "Adding this WAF to the device group..."
+                    # check that our device is present in the Sync device group locally
+                    failed=0
+                    until [[ "$(curl -sk -u $slave_user:$slave_password -X GET -H "Content-type: application/json" https://localhost/mgmt/tm/cm/device-group/~Common~Sync/devices | grep -o "$slave_hostname")" ]] || [[ $failed -eq $CMI_RETRIES ]]; do
+                         failed=$(($failed + 1))
+                         curl -sk -u $master_user:$master_password -X POST -H "Content-type: application/json" https://$master_ip/mgmt/tm/cm/device-group/~Common~Sync/devices -d '{ "name":"'"$slave_hostname"'" }'
+                         log "Not yet joined to device group after $failed tries, retrying in $CMI_RETRY_INTERVAL seconds"
+                         sleep $CMI_RETRY_INTERVAL
+                    done
+                    
+                    if [[ $failed -ge $CMI_RETRIES ]]; then
+                         log "Could not join the device group after $failed attempts, quitting..."
+                         set_status "Failure: Could not join the device group after $failed attempts"
+                         exit
+                    fi
+                                                                    
+                    # continue after both WAFs have synchronized
+                    log "Synchronizing..."                  
+                    # check that the Sync device group is synchronized locally
+                    failed=0
+                    until [[ "$(curl -sk -u $slave_user:$slave_password -X GET -H "Content-type: application/json" https://localhost/mgmt/tm/cm/sync-status/ | grep -o "Sync (In Sync): All devices in the device group are in sync")" ]] || [[ $failed -eq $CMI_RETRIES ]]; do
+                         failed=$(($failed + 1))
+                         # sync from the slave to the master for the datasync-global-dg device group
+                         curl -sk -u $slave_user:$slave_password -X POST -H "Content-Type: application/json" https://localhost/mgmt/tm/cm -d '{ "command":"run","utilCmdArgs":"config-sync to-group datasync-global-dg" }'
+                         # sync from the master to the slave for the Sync device group
+                         curl -sk -u $master_user:$master_password -X POST -H "Content-Type: application/json" https://$master_ip/mgmt/tm/cm -d '{ "command":"run","utilCmdArgs":"config-sync to-group Sync" }'
+                         log "Not in sync yet after $failed tries, retrying in $CMI_RETRY_INTERVAL seconds..."                              
+                         sleep $CMI_RETRY_INTERVAL
+                    done
+                    
+                    if [[ $failed -ge $CMI_RETRIES ]]; then
+                         log "Could not synchronize the device group after $failed attempts, quitting..."
+                         set_status "Failure: Could not synchronize the device group after $failed attempts"
+                         exit
+                    fi
+                    
+               else
+                    log "No credentials found, returning to deployment."
+               fi
+               
+          else
+               log "Sync device group found, returning to deployment."
+          fi
+          
+          log "CMI configuration successful, returning to deployment."
+     fi
+}
+
+function datagroup_configuration() {
+     address=$(get_user_data_value {loadbalance}{device_address})
+     master=$(get_user_data_value {loadbalance}{is_master})
+     applianceid=$(get_user_data_value {logging}{applianceid})
+     # this data group tracks the unique GUID of the Azure VM
+     applianceid_data_group=`tmsh list ltm data-group internal applianceid_datagroup`
+     # this data group maintains a list of application services and their original deployment time
+     appsvc_data_group=`tmsh list ltm data-group internal appsvc_datagroup`
+     # this data group controls overwrite of the ASM policy
+     appstatus_data_group=`tmsh list ltm data-group internal appstatus_datagroup`
+     
+     # Check to see if we are master
+     if [[ $master == "true" ]]; then
+          if [[ -z $applianceid_data_group ]]; then
+               # create the data group and add master
+               applianceid_data_group_cmd="tmsh create ltm data-group internal /Common/applianceid_datagroup type string records add { $address { data $applianceid }  }"
+          else 
+               # add master to the data group
+               # this is for the case where a master has rejoined the cluster using the same IP
+               applianceid_data_group_cmd="tmsh modify ltm data-group internal /Common/applianceid_datagroup records modify { $address { data $applianceid }  }"
+          fi
+          
+          if [[ -z $appsvc_data_group ]]; then
+               # create the data group and add master
+               appsvc_data_group_cmd="tmsh create ltm data-group internal /Common/appsvc_datagroup type string"
+               eval "$appsvc_data_group_cmd 2>&1 | $LOGGER_CMD"
+          else 
+               log "App service data group already exists."
+          fi
+          
+          if [[ -z $appstatus_data_group ]]; then
+               # create the data group and set status to 1
+               appstatus_data_group_cmd="tmsh create ltm data-group internal /Common/appstatus_datagroup type string records add { status { data 1 } }"
+               eval "$appstatus_data_group_cmd 2>&1 | $LOGGER_CMD"
+          else
+               # reset the status to 1 when we start a script run
+               appstatus_data_group_cmd="tmsh modify ltm data-group internal /Common/appstatus_datagroup records modify { status { data 1 } }"
+               eval "$appstatus_data_group_cmd 2>&1 | $LOGGER_CMD"
+          fi
+     else
+          # add slave to the applianceid data group
+          applianceid_data_group_cmd="tmsh modify ltm data-group internal /Common/applianceid_datagroup records add { $address { data $applianceid }  }"
+     fi
+     
+     eval "$applianceid_data_group_cmd 2>&1 | $LOGGER_CMD"
+     tmsh save sys config | eval $LOGGER_CMD
+}
+
+function get_application_service() {
+	echo -n $(tmsh list sys application service recursive ${1}.app/${1} one-line | awk '/^sys/ { print $4 }')
+}
+
+iapp_configuration_download() {
+	  rm -f $OS_USER_DATA_TMP_FILE
+	  
+	  log "Retrieving user-iApp-data from $1..."
+	  curl -k -s -f --retry $OS_USER_DATA_RETRIES --retry-delay \
+	    $OS_USER_DATA_RETRY_INTERVAL --retry-max-time $OS_USER_DATA_RETRY_MAX_TIME \
+   	    -o $OS_USER_DATA_TMP_FILE $1
+   	  
+   	  if [[ $? == 0 ]]; then
+   	  	tmsh load sys config merge file $OS_USER_DATA_TMP_FILE &> /dev/null
+   	  	sleep 10
+    	  else
+	      log "Could not retrieve user-data after $OS_USER_DATA_RETRIES attempts, quitting..."
+	      set_status "Failure: Could not retrieve user-data after $OS_USER_DATA_RETRIES attempts"
+	      return 1
+ 	  fi
+}
+
+iapp_configuration() {
+     apps=`tmsh list sys application service recursive one-line | awk '/^sys/ { print $4 }' | awk -F'/' '{print $2}'`
+     log "Current application services: $apps"
+     iapp_templates=$(get_user_data_iapps_hash {bigip}{iappconfig})
+     for iapp_template in ${iapp_templates[@]}; do
+          if [[ -n $iapp_template && $iapp_template != *"HASH"* ]]; then
+               log "downloading iApp template $iapp_template"
+               iapp_configuration_download $(get_user_data_value {bigip}{iappconfig}{\"$iapp_template\"}{template_location})
+               deployments=$(get_user_data_iapps_hash {bigip}{iappconfig}{\"$iapp_template\"}{deployments})
+               # first delete any existing deployments that are missing from the JSON
+               for app in $apps; do
+                    if echo $deployments | grep $app; then
+                         log "The application service $app belongs."
+                    else
+                         log "Deleting spplication service $app."
+                         command="delete sys application service ${app}.app/${app}"
+                         tmsh -c "$command"
+                         if [[ $? == 0 ]]; then
+                              log "Successfully deleted the $app application service."
+                              delete_appsvc_data_group_cmd="tmsh modify ltm data-group internal /Common/appsvc_datagroup records delete { $app }"
+                              eval "$delete_appsvc_data_group_cmd 2>&1 | $LOGGER_CMD"
+                              tmsh save sys config | eval $LOGGER_CMD
+                         else
+                              log "Unable to delete the $app application service"
+                         fi                                                                         
+                    fi
+               done
+               for deployment in ${deployments[@]}; do
+                    if [[ -n $deployment && $deployment != *"HASH"* ]]; then
+                         log "Deploying Application Service $deployment using iApp template $iapp_template"
+                         
+                         # create the string of variables from JSON, formatted for use with the create sys app service command
+                         service=" traffic-group "
+                         service+=$(get_user_data_value {bigip}{iappconfig}{\"$iapp_template\"}{deployments}{\"$deployment\"}{\"traffic-group\"})
+                         service+=" strict-updates "
+                         service+=$(get_user_data_value {bigip}{iappconfig}{\"$iapp_template\"}{deployments}{\"$deployment\"}{\"strict-updates\"})        
+                         service+=" " 
+                         variables=$(get_user_data_iapps_hash {bigip}{iappconfig}{\"$iapp_template\"}{deployments}{\"$deployment\"}{variables})
+                         if [[ -n $variables ]]; then
+                              service+=" variables replace-all-with {"
+                              for variable in ${variables[@]}; do
+                                   value=$(get_user_data_value {bigip}{iappconfig}{\"$iapp_template\"}{deployments}{\"$deployment\"}{variables}{\"$variable\"})
+                                   if [[ -n $variable && -n $value && $value != *"ARRAY"* ]]; then
+                                        service+=$variable
+                                        service+=" { value \""
+                                        service+=$value
+                                        service+="\" } "
+                                   fi     
+                              done
+                              service+=" } "
+                         fi
+                         service+=" tables replace-all-with { "
+                         tables=$(get_user_data_iapps_hash {bigip}{iappconfig}{\"$iapp_template\"}{deployments}{\"$deployment\"}{tables})
+                         for table in ${tables[@]}; do
+                              if [[ -n $table && $table != *"HASH"* ]]; then
+                                   service+=$table
+                                   service+=" { column-names { "
+                                   service+=$(get_user_data_iapps_array {bigip}{iappconfig}{\"$iapp_template\"}{deployments}{\"$deployment\"}{tables}{\"$table\"}{\"column-names\"})
+                                   service+=" } rows { "
+                                   rows=$(get_user_data_iapps_hash {bigip}{iappconfig}{\"$iapp_template\"}{deployments}{\"$deployment\"}{tables}{\"$table\"}{\"rows\"})
+                                   for row in ${rows[@]}; do
+                                        if [[ -n $row && $row != *"ARRAY"* ]]; then
+                                             service+="{ row { "
+                                             rowdataarray=$(get_user_data_iapps_array {bigip}{iappconfig}{\"$iapp_template\"}{deployments}{\"$deployment\"}{tables}{\"$table\"}{rows}{\"$row\"})
+                                             for rowdata in ${rowdataarray[@]}; do
+                                                  service+=$rowdata
+                                                  service+=" "
+                                             done     
+                                             service+=" }}"
+                                        fi
+                                   done
+                                   service+=" } }"     
+                              fi
+                         done     
+                         service+=" } "
+                         
+                         if [[ -n $(get_application_service ${deployment}) ]]; then
+                              # set the app status to 0, so the iApp will not download a new ASM policy
+                              appstatus_data_group_cmd="tmsh modify ltm data-group internal /Common/appstatus_datagroup records modify { status { data 0 } }"
+                              eval "$appstatus_data_group_cmd 2>&1 | $LOGGER_CMD"
+                              
+                              # deployment already exists, update the application service but don't touch the time stamp data group
+                              command="modify sys application service ${deployment}.app/${deployment} execute-action definition $service"
+                              log "Application Service Already Exists; Updating Deployment - Last Message $iapp_status"
+                              set_status "Application Service Already Exists; Updating Deployment - Last Message $iapp_status"
+                         else
+                              # new deployment, add it to the time stamp data group
+                              add_appsvc_data_group_cmd="tmsh modify ltm data-group internal /Common/appsvc_datagroup records add { $deployment { data $(date +%s) }  }"
+                              eval "$add_appsvc_data_group_cmd 2>&1 | $LOGGER_CMD"
+                              tmsh save sys config | eval $LOGGER_CMD
+                              
+                              # create the application service
+                              command="create sys application service ${deployment} template $iapp_template $service"
+                         fi
+                         
+                         # run the iApp command
+                         tmsh -c "$command"
+                         iapp_status=$(cat $OS_USER_DATA_STATUS_PATH)
+                         # check that the application service we just deployed is present; if not, report failure
+                         if [[ -z $(get_application_service ${deployment}) ]]; then
+                              # remove failed deployment from data group
+                              delete_appsvc_data_group_cmd="tmsh modify ltm data-group internal /Common/appsvc_datagroup records delete { $deployment }"
+                              eval "$delete_appsvc_data_group_cmd 2>&1 | $LOGGER_CMD"
+                              tmsh save sys config | eval $LOGGER_CMD
+                              
+                              log "Application Service Deployment Failed - Last Message $iapp_status"
+                              set_status "Failure: Application Service Deployment Failed - Last Message $iapp_status"
+                              exit
+                         else
+                              log "Application Service Deployment Succeeded - Last Message $iapp_status"
+                         fi 					
+                    fi
+               done
+          fi
+     done
+     # set the app status to 1, so the iApp will download a new ASM policy when run outside of the startup script
+     appstatus_data_group_cmd="tmsh modify ltm data-group internal /Common/appstatus_datagroup records modify { status { data 1 } }"
+     eval "$appstatus_data_group_cmd 2>&1 | $LOGGER_CMD"
 }
 
 function main() {
@@ -586,7 +946,7 @@ function main() {
   set_status "In Progress: Starting Configuration"
     
     #ensure json format - remove new lines
-	  cat $OS_USER_DATA_PATH | sed 's/\t/ /g' | sed ':a;N;$!ba;s/\n/ /g'  > $OS_USER_DATA_TEMP_PATH
+    cat $OS_USER_DATA_PATH | sed 's/\t/ /g' | sed ':a;N;$!ba;s/\n/ /g'  > $OS_USER_DATA_TEMP_PATH
     
     # ensure that mcpd is started and alive before doing anything
     wait_mcp_running
@@ -595,8 +955,7 @@ function main() {
     if [[ $? == 0 ]]; then
       sleep 10
       tmsh save sys config | eval $LOGGER_CMD
-      
-      
+            
       	network_provision=$(get_user_data_value {bigip}{network}{provision})
       	if [[ $network_provision != "false" ]]; then
           configure_tmm_ifs
@@ -615,13 +974,10 @@ function main() {
           nameserver=`tmsh list sys dns name-servers  | awk 'BEGIN {RS=""}{gsub(/\n/,"",$0); print $6}'`
           echo -e "search localhost\nnameserver      $nameserver\noptions ndots:0" > /etc/resolv.conf
  	fi 	
- 	
- 	
- 	
-  
+ 	  
  	ntp_servers=$(get_user_data_value {bigip}{ntp_servers})
 	if [[ -n $ntp_servers ]]; then
-	  tmsh modify sys ntp servers replace-all-with { $ntp_servers }
+	  tmsh modify sys ntp timezone UTC servers replace-all-with { $ntp_servers }
   	  log "Setting ntp servers to $ntp_servers" 
           sleep 10 
         fi
@@ -651,18 +1007,40 @@ function main() {
       wait_mcp_running
       wait_tmm_started
       log "Changing db settings..."
+      tmsh modify sys db configsync.allowmanagement value enable | eval $LOGGER_CMD
       tmsh modify sys global-settings gui-setup disabled | eval $LOGGER_CMD
-
-      sleep 10   
-      webserv
-      sleep 10   
+      
+      set_status "In Progress: CMI"      
+      cmi_configuration      
+      set_status "In Progress: CMI - OK"
+      
+      set_status "In Progress: Configuring Data Groups"
+      datagroup_configuration
+      set_status "In Progress: Configuring Data Groups OK"
+      
+      if [[ $master == "true" ]]; then
+           set_status "In Progress: Configuring Applications"     
+           iapp_configuration           
+           set_status "In Progress: Configuring Applications - OK"
+      else 
+          log "We are a slave, nothing left to do."
+      fi
+      
+      sleep 10      
       tmsh save sys config | eval $LOGGER_CMD 
       fi
 
   finish=$(date +%s)
   log "Completed BlackBox auto-configuration in $(($finish-$start)) seconds..."
   set_status "OK"
-  rm $0
+  
+  # remove startup script
+  currentscript=$0
+  set_status "Shredding ${currentscript}" 
+  shred -u -z ${currentscript}
+  
+  set_status "OK"
+  exit
 }
 
 # immediately background script to prevent blocking of MCP from starting
