@@ -41,6 +41,6 @@ echo $jsonfile > /config/blackbox.conf
 ## Move the files and run them.
 mv ./azuresetup.sh /config/azuresetup.sh
 chmod +w /config/startup
-echo "/config/autoconfig.sh" >> /config/startup
+echo "/config/azuresetup.sh" >> /config/startup
 chmod u+x /config/azuresetup.sh
 bash /config/azuresetup.sh
