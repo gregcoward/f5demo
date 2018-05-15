@@ -1,0 +1,503 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "dnsNameForPublicIP": {
+      "type": "string",
+      "metadata": {
+        "description": "Unique DNS Name for the Public IP used to access the Web Application Firewalls for management."
+      }
+    },
+    "licenseToken": {
+      "type": "string",
+      "metadata": {
+        "description": "The License Token for the first BYOL F5 Web Application Firewall."
+      }
+    }
+  },
+  "variables": {
+    "location": "West US",
+    "vmSize": "Standard_F4",
+    "webSize": "Standard_A1",
+    "adminUsername": "azureuser",
+    "adminPassword": "F5cloudtry",
+    "applicationName": "f5cloudtry",
+    "applicationProtocols": "https",
+    "applicationAddress": "10.10.2.21",
+    "applicationAddress2": "10.10.2.22",
+    "applicationPorts": "80",
+    "applicationType": "Linux",
+    "blockingLevel": "Medium",
+    "applicationFQDN": "[concat(parameters('dnsNameForPublicIP'), '.westus.cloudapp.azure.com')]",
+    "virtualNetworkName": "VNet",
+    "vnetAddressPrefix": "10.10.0.0/16",
+    "subnetName1": "External",
+    "subnetPrefix1": "10.10.1.0/24",
+    "subnetName2": "Internal",
+    "subnetPrefix2": "10.10.2.0/24",
+    "ipAddress": "10.10.1.10",
+    "webipAddress": "10.10.2.",
+    "numberOfInstances": 3,
+    "webNamePrefix": "web",
+    "wafNamePrefix": "bigip",
+    "baseURL": "https://raw.githubusercontent.com/gregcoward/f5cloudtry/master/",
+    "webnicNamePrefix": "[concat(variables('webNamePrefix'),'-nic')]",
+    "webavailabilitySetName": "web-avset",
+    "nicNamePrefix": "[concat(variables('wafNamePrefix'),'-nic')]",
+    "IPNamePrefix": "[concat(variables('wafNamePrefix'),'-ip')]",
+    "loadBalancerName": "bigip-alb",
+    "newStorageAccountName": "[concat(parameters('dnsNameForPublicIP'),'stor')]",
+    "lbID": "[resourceId('Microsoft.Network/loadBalancers',variables('loadBalancerName'))]",
+    "frontEndIPConfigID": "[concat(variables('lbID'),'/frontendIPConfigurations/loadBalancerFrontEnd')]",
+    "guiMgtID": "[concat(variables('lbID'),'/inboundNatRules/guimgt')]",
+    "sshMgtID": "[concat(variables('lbID'),'/inboundNatRules/sshmgt')]",
+    "publicIPID": "[resourceId('Microsoft.Network/publicIPAddresses',variables('IPNamePrefix'))]",
+    "vnetID": "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetworkName'))]",
+    "subnetRef1": "[concat(variables('vnetID'),'/subnets/',variables('subnetName1'))]",
+    "subnetRef2": "[concat(variables('vnetID'),'/subnets/',variables('subnetName2'))]",
+    "webimagePublisher": "Canonical",
+    "webimageOffer": "UbuntuServer",
+    "webimageSKU": "14.04.2-LTS"
+  },
+  "resources": [
+    {
+      "name": "[variables('newStorageAccountName')]",
+      "type": "Microsoft.Storage/storageAccounts",
+      "location": "[variables('location')]",
+      "apiVersion": "2015-05-01-preview",
+      "properties": {
+        "accountType": "Standard_LRS"
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "name": "[variables('IPNamePrefix')]",
+      "location": "[variables('location')]",
+      "tags": {
+        "displayName": "PublicIPAddress"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic",
+        "dnsSettings": {
+          "domainNameLabel": "[parameters('dnsNameForPublicIP')]"
+        }
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/virtualNetworks",
+      "name": "[variables('virtualNetworkName')]",
+      "location": "[variables('location')]",
+      "tags": {
+        "displayName": "VirtualNetwork"
+      },
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[variables('vnetAddressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('subnetName1')]",
+            "properties": {
+              "addressPrefix": "[variables('subnetPrefix1')]"
+            }
+          },
+          {
+            "name": "[variables('subnetName2')]",
+            "properties": {
+              "addressPrefix": "[variables('subnetPrefix2')]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[variables('nicNamePrefix')]",
+      "location": "[variables('location')]",
+      "tags": {
+        "displayName": "NetworkInterface"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]",
+        "[concat('Microsoft.Network/loadBalancers/', variables('loadBalancerName'))]",
+        "[concat('Microsoft.Network/loadBalancers/', variables('loadBalancerName'),'/inboundNatRules/guimgt')]",
+        "[concat('Microsoft.Network/loadBalancers/', variables('loadBalancerName'),'/inboundNatRules/sshmgt')]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Static",
+              "privateIPAddress": "[concat(variables('ipAddress'))]",
+              "subnet": {
+                "id": "[variables('subnetRef1')]"
+              },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[concat(variables('lbID'), '/backendAddressPools/', 'loadBalancerBackEnd')]"
+                }
+              ],
+              "loadBalancerInboundNatRules": [
+                {
+                  "id": "[concat(variables('lbID'), '/inboundNatRules/', 'guimgt')]"
+                },
+                {
+                  "id": "[concat(variables('lbID'), '/inboundNatRules/', 'sshmgt')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[concat('Microsoft.Network/publicIPAddresses/', variables('IPNamePrefix'))]"
+      ],
+      "location": "[variables('location')]",
+      "name": "[variables('loadBalancerName')]",
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "loadBalancerFrontEnd",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[variables('publicIPID')]"
+              }
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "loadBalancerBackEnd"
+          }
+        ],
+        "loadBalancingRules": [
+          {
+            "Name": "lbrule1",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/loadBalancerFrontEnd')]"
+              },
+              "backendAddressPool": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/backendAddressPools/loadBalancerBackEnd')]"
+              },
+              "probe": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/probes/lbprobe1')]"
+              },
+              "protocol": "Tcp",
+              "frontendPort": 80,
+              "backendPort": 880,
+              "idleTimeoutInMinutes": 15
+            }
+          },
+          {
+            "Name": "lbrule2",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/loadBalancerFrontEnd')]"
+              },
+              "backendAddressPool": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/backendAddressPools/loadBalancerBackEnd')]"
+              },
+              "probe": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/probes/lbprobe2')]"
+              },
+              "protocol": "Tcp",
+              "frontendPort": 443,
+              "backendPort": 6443,
+              "idleTimeoutInMinutes": 15
+            }
+          }
+        ],
+        "probes": [
+          {
+            "properties": {
+              "protocol": "Tcp",
+              "port": 880,
+              "intervalInSeconds": 15,
+              "numberOfProbes": 2
+            },
+            "name": "lbprobe1"
+          },
+          {
+            "properties": {
+              "protocol": "Tcp",
+              "port": 6443,
+              "intervalInSeconds": 15,
+              "numberOfProbes": 2
+            },
+            "name": "lbprobe2"
+          }
+        ]
+      },
+      "type": "Microsoft.Network/loadBalancers"
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/loadBalancers/inboundNatRules",
+      "name": "[concat(variables('loadBalancerName'),'/guimgt')]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/loadBalancers/', variables('loadBalancerName'))]"
+      ],
+      "properties": {
+        "frontendIPConfiguration": {
+          "id": "[variables('frontEndIPConfigID')]"
+        },
+        "protocol": "tcp",
+        "frontendPort": 8443,
+        "backendPort": 443,
+        "enableFloatingIP": false
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/loadBalancers/inboundNatRules",
+      "name": "[concat(variables('loadBalancerName'),'/sshmgt')]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/loadBalancers/', variables('loadBalancerName'))]"
+      ],
+      "properties": {
+        "frontendIPConfiguration": {
+          "id": "[variables('frontEndIPConfigID')]"
+        },
+        "protocol": "tcp",
+        "frontendPort": 8022,
+        "backendPort": 22,
+        "enableFloatingIP": false
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "[variables('wafNamePrefix')]",
+      "location": "[variables('location')]",
+      "tags": {
+        "displayName": "WAFs"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Network/networkInterfaces/', variables('nicNamePrefix'))]",
+        "[concat('Microsoft.Storage/storageAccounts/', variables('newStorageAccountName'))]"
+      ],
+      "plan": {
+        "name": "f5-bigip-virtual-edition-best-byol",
+        "publisher": "f5-networks",
+        "product": "f5-big-ip"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[concat(variables('wafNamePrefix'))]",
+          "adminUsername": "[variables('adminUsername')]",
+          "adminPassword": "[variables('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "f5-networks",
+            "offer": "f5-big-ip",
+            "sku": "f5-bigip-virtual-edition-best-byol",
+            "version": "12.1.24"
+          },
+          "osDisk": {
+            "name": "osdisk",
+            "vhd": {
+              "uri": "[concat('http://',variables('newStorageAccountName'),'.blob.core.windows.net/',variables('newStorageAccountName'),'/osDisk.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[concat(resourceId('Microsoft.Network/networkInterfaces',variables('nicNamePrefix')))]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true,
+            "storageUri": "[concat('http://',variables('newstorageAccountName'),'.blob.core.windows.net')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(variables('wafNamePrefix'),'/start')]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/',variables('wafNamePrefix'))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.OSTCExtensions",
+        "type": "CustomScriptForLinux",
+        "typeHandlerVersion": "1.2",
+        "settings": {
+          "fileUris": [
+            "[concat(variables('baseURL'),'azuresecurity.sh')]",
+            "[concat(variables('baseURL'),'start.sh')]"
+          ],
+          "commandToExecute": "[concat('bash start.sh ','true',';',concat(variables('wafNamePrefix')),';',concat(variables('ipAddress')),';',variables('adminPassword'),';',parameters('licenseToken'),';',toLower(variables('applicationName')),' 6443 ',variables('applicationProtocols'),' ',variables('applicationAddress'),';',variables('applicationAddress2'),';',replace(toLower(variables('location')),' ',''),' ',variables('applicationPorts'),' ',toLower(variables('applicationType')),';',toLower(variables('blockingLevel')),';',toLower(variables('applicationFQDN')))]"
+        }
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "location": "[variables('location')]",
+      "name": "[variables('webavailabilitySetName')]",
+      "type": "Microsoft.Compute/availabilitySets"
+    },
+    {
+      "apiVersion": "2015-05-01-preview",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[concat(variables('webnicNamePrefix'), copyindex())]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
+      ],
+      "copy": {
+        "name": "nicLoop",
+        "count": "[variables('numberOfInstances')]"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Static",
+              "privateIPAddress": "[concat(variables('webipAddress'),add(21,copyindex()))]",
+              "subnet": {
+                "id": "[variables('subnetRef2')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "[concat(variables('webNamePrefix'), copyindex())]",
+      "copy": {
+        "name": "virtualMachineLoop",
+        "count": "[variables('numberOfInstances')]"
+      },
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Storage/storageAccounts/', variables('newStorageAccountName'))]",
+        "[concat('Microsoft.Network/networkInterfaces/', variables('webnicNamePrefix'), copyindex())]",
+        "[concat('Microsoft.Compute/availabilitySets/', variables('webavailabilitySetName'))]"
+      ],
+      "properties": {
+        "availabilitySet": {
+          "id": "[resourceId('Microsoft.Compute/availabilitySets',variables('webavailabilitySetName'))]"
+        },
+        "hardwareProfile": {
+          "vmSize": "[variables('webSize')]"
+        },
+        "osProfile": {
+          "computerName": "[concat(variables('webNamePrefix'), copyIndex())]",
+          "adminUsername": "[variables('adminUsername')]",
+          "adminPassword": "[variables('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('webimagePublisher')]",
+            "offer": "[variables('webimageOffer')]",
+            "sku": "[variables('webimageSKU')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "osdisk",
+            "vhd": {
+              "uri": "[concat('http://',variables('newStorageAccountName'),'.blob.core.windows.net/vhds/','osdisk', copyindex(), '.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces',concat(variables('webnicNamePrefix'),copyindex()))]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true,
+            "storageUri": "[concat('http://',variables('newStorageAccountName'),'.blob.core.windows.net')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "copy": {
+        "name": "extensionLoop",
+        "count": "[sub(variables('numberOfInstances'), 1)]"
+      },
+      "name": "[concat(variables('webNamePrefix'), copyindex(),'/startup_script')]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', variables('webNamePrefix'),copyindex())]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.OSTCExtensions",
+        "type": "CustomScriptForLinux",
+        "typeHandlerVersion": "1.2",
+        "settings": {
+          "fileUris": [
+            "[concat(variables('baseURL'),'startup_script.sh')]",
+            "[concat(variables('baseURL'),'opencart-2.0.1.1.zip')]"
+          ],
+          "commandToExecute": "[concat('bash startup_script.sh ',variables('webNamePrefix'),sub(variables('numberOfInstances'),1) ,' ',parameters('dnsNameForPublicIP'),' ',sub(variables('numberOfInstances'),1), ' ',variables('webNamePrefix'), ' ',variables('adminUsername'), ' ',variables('adminPassword'))]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(variables('webNamePrefix'), sub(variables('numberOfInstances'),1),'/mysql_startup_script')]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', variables('webNamePrefix'),sub(variables('numberOfInstances'),1))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.OSTCExtensions",
+        "type": "CustomScriptForLinux",
+        "typeHandlerVersion": "1.2",
+        "settings": {
+          "fileUris": [
+            "[concat(variables('baseURL'),'mysql_startup_script.sh')]"
+          ],
+          "commandToExecute": "[concat('bash mysql_startup_script.sh ',variables('adminPassword'))]"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "GUI-URL": {
+      "type": "string",
+      "value": "[concat('https://',reference(variables('publicIPID')).dnsSettings.fqdn,':8443')]"
+    },
+    "SSH-URL": {
+      "type": "string",
+      "value": "[concat(reference(variables('publicIPID')).dnsSettings.fqdn,' ',8022)]"
+    }
+  }
+}
